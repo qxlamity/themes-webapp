@@ -68,6 +68,9 @@
   .chips{display:flex;gap:8px;flex-wrap:wrap}
   .chip{border:0;background:var(--bg);color:var(--fg);padding:8px 12px;border-radius:20px;font:inherit;font-size:13px}
   .chip.on{background:var(--btn);color:var(--btnfg)}
+  .snap-wrap{position:relative;padding-top:2px}
+  .ticks{display:flex;justify-content:space-between;font-size:10px;color:var(--hint);padding:0 4px;margin-top:-2px}
+  #alpha{height:30px}
   .dots{display:flex;gap:6px;margin-top:10px}
   .dots:empty{display:none}
   .dots span{width:22px;height:22px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
@@ -153,6 +156,16 @@
   </div>
 </div>
 
+<div class="card">
+  <div class="row"><p class="label" style="margin:0">Непрозрачность пузырей</p><span class="val" id="alphaVal">100%</span></div>
+  <div class="snap-wrap">
+    <input type="range" id="alpha" min="0" max="100" step="10" value="100" list="alphaTicks">
+    <datalist id="alphaTicks"><option value="0"><option value="10"><option value="20"><option value="30"><option value="40"><option value="50"><option value="60"><option value="70"><option value="80"><option value="90"><option value="100"></datalist>
+    <div class="ticks"><span>0</span><span>50</span><span>100</span></div>
+  </div>
+  <p class="hint">Шаг 10%. 100% — обычные пузыри, 0% — текст прямо поверх фона.</p>
+</div>
+
 <div class="card" id="wpCard">
   <p class="label">Фон чата</p>
   <div class="chips" id="wp">
@@ -169,7 +182,7 @@ const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor?.('secondary_bg_color'); }
 
 const PRESETS = ['#3390ec','#8e44ad','#2ecc71','#e74c3c','#f39c12','#ff6b9d','#1abc9c','#607d8b'];
-const S = { platform:'android', dark:true, accent:'#3390ec', tint:1.0, outBubble:null, wallpaper:'tint', wpColors:null, photoUrl:null };
+const S = { platform:'android', dark:true, accent:'#3390ec', tint:1.0, outBubble:null, wallpaper:'tint', wpColors:null, photoUrl:null, photo:null, alpha:1 };
 
 // ---------- цвета (порт themes.py) ----------
 const clamp=(v,a=0,b=255)=>Math.max(a,Math.min(b,v));
@@ -188,12 +201,14 @@ const lum=([r,g,b])=>(0.2126*r+0.7152*g+0.0722*b)/255;
 const textOn=rgb=>lum(rgb)<.55?[255,255,255]:[20,20,25];
 
 function palette(){
-  const acc=hex2rgb(S.accent), t=S.tint, d=S.dark;
+  const acc=hex2rgb(S.accent), t=S.tint, d=S.dark, ph=S.photo;
+  const bgSrc=ph?hex2rgb(ph.dominant):acc, inSrc=ph?hex2rgb(ph.secondary):acc;
+  const bgS=(ph?.6:.35)*t, inS=(ph?.55:.3)*t;
   const P={accent:acc,on:textOn(acc),accentDark:shade(acc,.8)};
-  if(d){P.bg=withHue(acc,.35*t,.08);P.bg2=withHue(acc,.35*t,.12);P.bg3=withHue(acc,.35*t,.17);
-    P.text=[235,235,240];P.sub=[150,155,165];P.in=withHue(acc,.3*t,.16);P.out=withHue(acc,.6*t,.24);P.wp=P.bg2;P.wp2=P.bg;}
-  else{P.bg=[255,255,255];P.bg2=withHue(acc,.4*t,.95);P.bg3=withHue(acc,.4*t,.90);
-    P.text=[20,20,25];P.sub=[120,125,135];P.in=[255,255,255];P.out=withHue(acc,.6*t,.88);P.wp=withHue(acc,.5*t,.92);P.wp2=withHue(acc,.5*t,.84);}
+  if(d){P.bg=withHue(bgSrc,bgS,.08);P.bg2=withHue(bgSrc,bgS,.12);P.bg3=withHue(bgSrc,bgS,.17);
+    P.text=[235,235,240];P.sub=withHue(bgSrc,.15*t,.62);P.in=withHue(inSrc,inS,ph?.18:.16);P.out=withHue(acc,.6*t,.24);P.wp=P.bg2;P.wp2=P.bg;}
+  else{P.bg=ph?withHue(bgSrc,bgS*.5,.985):[255,255,255];P.bg2=withHue(bgSrc,bgS,.95);P.bg3=withHue(bgSrc,bgS,.90);
+    P.text=[20,20,25];P.sub=withHue(bgSrc,.15*t,.48);P.in=ph?withHue(inSrc,inS,.93):[255,255,255];P.out=withHue(acc,.6*t,.88);P.wp=withHue(acc,.5*t,.92);P.wp2=withHue(acc,.5*t,.84);}
   if(S.outBubble){P.out=hex2rgb(S.outBubble);}
   return P;
 }
@@ -212,9 +227,13 @@ function render(){
   else{chat.classList.remove('photo');
     chat.style.background=S.wpColors?`linear-gradient(${S.wpColors[0]},${S.wpColors[1]})`:`linear-gradient(${css(P.wp)},${css(P.wp2)})`;}
   $('pvDate').style.background = d ? css(P.bg3,.9) : 'rgba(0,0,0,.35)';
-  for(const id of ['b1','b3']){const e=$(id);e.style.background=css(P.in);e.style.color=css(P.text);}
-  const outFg = S.outBubble ? textOn(P.out) : P.text;
-  for(const id of ['b2','b4']){const e=$(id);e.style.background=css(P.out);e.style.color=css(outFg);}
+  const onPhoto = S.photoUrl && S.wallpaper==='photo' && !ios;
+  const textOnBg = onPhoto ? (d?[255,255,255]:[20,20,25]) : P.text;
+  const inFg = S.alpha<.5 ? textOnBg : P.text;
+  for(const id of ['b1','b3']){const e=$(id);e.style.background=css(P.in,S.alpha);e.style.color=css(inFg);e.style.boxShadow=S.alpha<1?'none':'';}
+  const outFg = S.alpha<.5 ? textOnBg : (S.outBubble ? textOn(P.out) : P.text);
+  for(const id of ['b2','b4']){const e=$(id);e.style.background=css(P.out,S.alpha);e.style.color=css(outFg);e.style.boxShadow=S.alpha<1?'none':'';}
+  $('alphaVal').textContent=Math.round(S.alpha*100)+'%';
   $('pvLink').style.color=css(S.outBubble?outFg:P.accent);
   $('pvInput').style.background=css(P.bg); $('pvInput').style.color=css(P.sub);
   $('pvField').style.background=css(P.bg2); $('pvField').style.color=css(P.sub);
@@ -234,7 +253,7 @@ function render(){
 // ---------- контролы ----------
 const haptic=()=>tg?.HapticFeedback?.selectionChanged();
 PRESETS.forEach(c=>{const b=document.createElement('button');b.className='sw';b.dataset.v=c;b.style.background=c;
-  b.onclick=()=>{S.accent=c;S.wpColors=null;$('hex').value=c;$('picker').value=c;$('hex').classList.remove('bad');haptic();render();};$('swatches').appendChild(b);});
+  b.onclick=()=>{S.accent=c;S.wpColors=null;S.photo=null;$('hex').value=c;$('picker').value=c;$('hex').classList.remove('bad');haptic();render();};$('swatches').appendChild(b);});
 $('picker').oninput=e=>{S.accent=e.target.value;$('hex').value=e.target.value;$('hex').classList.remove('bad');render();};
 $('hex').oninput=e=>{let v=e.target.value.trim();if(!v.startsWith('#'))v='#'+v;
   if(/^#[0-9a-f]{6}$/i.test(v)){S.accent=v;$('picker').value=v;e.target.classList.remove('bad');render();}else e.target.classList.add('bad');};
@@ -245,6 +264,10 @@ $('outOn').onclick=()=>{S.outBubble=S.outBubble?null:($('ohex').value.match(/^#[
   $('ohex').value=S.outBubble||$('ohex').value;$('opicker').value=S.outBubble||S.accent;haptic();render();};
 $('dark').onclick=()=>{S.dark=!S.dark;haptic();render();};
 $('tint').oninput=e=>{S.tint=e.target.value/100;render();};
+let lastAlpha=100;
+$('alpha').oninput=e=>{const v=Math.round(e.target.value/10)*10;e.target.value=v;
+  if(v!==lastAlpha){lastAlpha=v;tg?.HapticFeedback?.impactOccurred('light');}
+  S.alpha=v/100;render();};
 document.querySelectorAll('#platform button').forEach(b=>b.onclick=()=>{S.platform=b.dataset.v;haptic();render();});
 document.querySelectorAll('#wp .chip').forEach(b=>b.onclick=()=>{S.wallpaper=b.dataset.v;haptic();render();});
 
@@ -273,12 +296,17 @@ async function loadPhoto(file){
   const dark=(lumSum/n)<.5;
   const big=cols.slice(0,4);
   const wpc=k=>{const c=big[Math.min(k,big.length-1)];return rgb2hex(hls2rgb(c.h,dark?(.12+.06*k):(.90-.06*k),Math.min(c.s,.6)));};
+  const hueDist=(a,b)=>{const x=Math.abs(a-b)%1;return Math.min(x,1-x);};
+  const dom=cols[0];
+  const cand=cols.filter(c=>c.s>.12&&hueDist(c.h,best.h)>.08);
+  let sec=cand.length?cand.reduce((a,c)=>c.s*Math.pow(c.share,.3)>a.s*Math.pow(a.share,.3)?c:a,cand[0]):{h:(best.h+.12)%1,s:best.s*.7};
+  S.photo={dominant:rgb2hex(hls2rgb(dom.h,.5,Math.max(dom.s,.25))),secondary:rgb2hex(hls2rgb(sec.h,.5,Math.max(sec.s,.35)))};
   S.accent=rgb2hex(acc);S.dark=dark;S.wpColors=[wpc(0),wpc(1)];S.outBubble=null;S.tint=1;
   if(S.photoUrl)URL.revokeObjectURL(S.photoUrl);S.photoUrl=URL.createObjectURL(file);
   S.wallpaper='photo';
   $('hex').value=S.accent;$('picker').value=S.accent;$('tint').value=100;
   $('dots').innerHTML=cols.slice(0,6).map(c=>`<span style="background:${rgb2hex(c.rgb)}"></span>`).join('');
-  $('photoHint').textContent='Готово — акцент и база подобраны. Можно докрутить ниже.';
+  $('photoHint').textContent='Готово — фон, чаты, входящие и акцент подобраны по фото. Можно докрутить ниже.';
   tg?.HapticFeedback?.notificationOccurred('success');
   render();
 }
@@ -287,7 +315,7 @@ $('photoIn').onchange=e=>{const f=e.target.files[0];if(f)loadPhoto(f);};
 // ---------- отправка ----------
 function submit(){
   const data=JSON.stringify({v:1,platform:S.platform,dark:S.dark,accent:S.accent,tint:+S.tint.toFixed(2),
-    out_bubble:S.outBubble,wallpaper:S.platform==='ios'?'tint':S.wallpaper,wp_colors:S.wpColors});
+    out_bubble:S.outBubble,wallpaper:S.platform==='ios'?'tint':S.wallpaper,wp_colors:S.wpColors,photo:S.photo,bubble_alpha:S.alpha});
   if(tg){tg.HapticFeedback?.notificationOccurred('success');tg.sendData(data);}
   else alert(data);
 }
